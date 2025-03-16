@@ -29,37 +29,38 @@ const Invoice = () => {
     navigate('/login', { replace: true });
   };
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    
-    // Handle numeric inputs
-    if (name === 'tax' || name === 'amountPaid') {
-      let formattedValue = value;
-      
-      // If it starts with 0 and has more digits, remove the leading zero
-      if (value.length > 1 && value.startsWith('0') && !value.startsWith('0.')) {
-        formattedValue = value.substring(1);
-      }
-      
-      setInvoiceData({
-        ...invoiceData,
-        [name]: formattedValue === '' ? 0 : parseFloat(formattedValue) || 0
-      });
-    } else {
-      setInvoiceData({
-        ...invoiceData,
-        [name]: value
-      });
-    }
+  // Update the formatNumberInput function to not use separators
+  const formatNumberInput = (value) => {
+    if (value === 0 || value === '0') return '0';
+    if (!value && value !== 0) return '';
+    return value.toString();
   };
 
+  // Keep the parseFormattedNumber function
+  const parseFormattedNumber = (formattedValue) => {
+    // Remove all non-numeric characters except decimal point
+    const numericString = formattedValue.toString().replace(/[^\d.]/g, '');
+    const numericValue = parseFloat(numericString);
+    return isNaN(numericValue) ? 0 : numericValue;
+  };
+
+  // Format currency for display only
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(amount);
+  };
+
+  // Update the handleItemChange function
   const handleItemChange = (index, field, value) => {
     const updatedItems = [...invoiceData.items];
     
     if (field === 'quantity' || field === 'rate') {
-      // Extract numeric value from formatted string
-      const numericValue = parseFloat(value.replace(/[^\d.-]/g, ''));
-      updatedItems[index][field] = isNaN(numericValue) ? 0 : numericValue;
+      // Extract numeric value
+      updatedItems[index][field] = parseFormattedNumber(value);
     } else {
       updatedItems[index][field] = value;
     }
@@ -68,6 +69,23 @@ const Invoice = () => {
       ...invoiceData,
       items: updatedItems
     });
+  };
+
+  // Update the handleInputChange function
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    
+    if (name === 'tax' || name === 'amountPaid') {
+      setInvoiceData({
+        ...invoiceData,
+        [name]: parseFormattedNumber(value)
+      });
+    } else {
+      setInvoiceData({
+        ...invoiceData,
+        [name]: value
+      });
+    }
   };
 
   const addItem = () => {
@@ -85,13 +103,6 @@ const Invoice = () => {
       ...invoiceData,
       items: updatedItems
     });
-  };
-
-  const formatNumberInput = (value) => {
-    // Format number for display
-    if (value === 0 || value === '0') return '0';
-    if (!value) return '';
-    return value.toString();
   };
 
   // Add calculation functions
@@ -126,34 +137,26 @@ const Invoice = () => {
     return `invoice-${invoiceNum}-${date}.pdf`;
   };
 
-  // Add this function to format currency with thousand separators
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(amount);
-  };
-
-  // Add this function to format input values with thousand separators
-  const formatNumberWithSeparators = (value) => {
-    if (value === 0 || value === '0') return '0';
-    if (!value) return '';
-    
-    // Convert to number and back to string to remove any non-numeric characters
-    const numericValue = parseFloat(value.toString().replace(/[^\d.-]/g, ''));
-    if (isNaN(numericValue)) return '';
-    
-    // Format with thousand separators
-    return numericValue.toLocaleString('id-ID');
-  };
-
   const generatePDF = () => {
     const doc = new jsPDF();
     
     // Define maxWidth for text wrapping
     const maxWidth = 180; // Maximum width for text in mm
+    
+    // Format currency for PDF with thousand separators
+    const formatPdfCurrency = (amount) => {
+      return new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: 'IDR',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(amount).replace(/\s/g, ' '); // Replace any non-breaking spaces
+    };
+    
+    // Format number with thousand separators (without currency symbol)
+    const formatPdfNumber = (number) => {
+      return number.toLocaleString('id-ID');
+    };
     
     // Set fixed dimensions for logo
     const logoWidthMm = 50;
@@ -222,9 +225,9 @@ const Invoice = () => {
         doc.text(line, 15, yPos + 6 + (lineIndex * 6));
       });
       
-      doc.text(item.quantity.toString(), 95, yPos + 6);
-      doc.text(item.rate.toFixed(2), 115, yPos + 6);
-      doc.text((item.quantity * item.rate).toFixed(2), 155, yPos + 6);
+      doc.text(formatPdfNumber(item.quantity), 95, yPos + 6);
+      doc.text(formatPdfCurrency(item.rate), 115, yPos + 6);
+      doc.text(formatPdfCurrency(item.quantity * item.rate), 155, yPos + 6);
       
       // Calculate height needed for this item
       const itemHeight = Math.max(10, (itemDescription.length * 6) + 4);
@@ -265,19 +268,19 @@ const Invoice = () => {
 
     // Summary section with right alignment
     doc.text(`Subtotal:`, 130, yPos);
-    doc.text(`IDR ${formatCurrency(subtotal)}`, 195, yPos, { align: 'right' });
+    doc.text(formatPdfCurrency(subtotal), 195, yPos, { align: 'right' });
     
     yPos += 8;
     doc.text(`Tax (${invoiceData.tax}%):`, 130, yPos);
-    doc.text(`IDR ${formatCurrency(tax)}`, 195, yPos, { align: 'right' });
+    doc.text(formatPdfCurrency(tax), 195, yPos, { align: 'right' });
     
     yPos += 8;
     doc.text(`Total:`, 130, yPos);
-    doc.text(`IDR ${formatCurrency(total)}`, 195, yPos, { align: 'right' });
+    doc.text(formatPdfCurrency(total), 195, yPos, { align: 'right' });
     
     yPos += 8;
     doc.text(`Amount Paid:`, 130, yPos);
-    doc.text(`IDR ${formatCurrency(invoiceData.amountPaid)}`, 195, yPos, { align: 'right' });
+    doc.text(formatPdfCurrency(invoiceData.amountPaid), 195, yPos, { align: 'right' });
     
     yPos += 8;
     // Highlight balance due with a box
@@ -286,7 +289,7 @@ const Invoice = () => {
     doc.rect(125, yPos - 5, 70, 10, 'F');
     doc.text(`Balance Due:`, 130, yPos);
     doc.setTextColor(0, 0, 0);
-    doc.text(`IDR ${formatCurrency(balanceDue)}`, 195, yPos, { align: 'right' });
+    doc.text(formatPdfCurrency(balanceDue), 195, yPos, { align: 'right' });
 
     // Add a horizontal delimiter before terms
     yPos += 15;
@@ -433,7 +436,7 @@ const Invoice = () => {
                         <input
                           type="text"
                           inputMode="decimal"
-                          value={formatNumberWithSeparators(item.rate)}
+                          value={formatNumberInput(item.rate)}
                           onChange={(e) => handleItemChange(index, 'rate', e.target.value)}
                           min="0"
                           required
